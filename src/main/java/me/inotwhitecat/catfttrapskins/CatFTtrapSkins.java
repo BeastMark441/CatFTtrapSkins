@@ -1,38 +1,46 @@
 package me.inotwhitecat.catfttrapskins;
 
-import com.sk89q.worldedit.bukkit.BukkitWorld;
-import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.EditSession;
-import com.sk89q.worldedit.Vector;
-import com.sk89q.worldedit.schematic.SchematicFormat;
+import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.bukkit.BukkitWorld;
+import com.sk89q.worldedit.extent.clipboard.Clipboard;
+import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
+import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats;
+import com.sk89q.worldedit.extent.clipboard.io.ClipboardReader;
+import com.sk89q.worldedit.function.operation.Operation;
+import com.sk89q.worldedit.function.operation.Operations;
+import com.sk89q.worldedit.math.BlockVector3;
+import com.sk89q.worldedit.session.ClipboardHolder;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.potion.PotionEffectType;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
 public class CatFTtrapSkins extends JavaPlugin implements Listener {
-    private Map<String, TrapData> trapDataMap; // Для хранения данных о ловушках
-    private WorldEditPlugin worldEdit;
+    private Map<String, TrapData> trapDataMap;
 
     @Override
     public void onEnable() {
-        // Проверяем наличие WorldEdit
         if (Bukkit.getPluginManager().getPlugin("WorldEdit") == null) {
             getLogger().severe("WorldEdit не найден! Плагин будет отключен.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        worldEdit = (WorldEditPlugin) Bukkit.getPluginManager().getPlugin("WorldEdit");
-        saveDefaultConfig();  // Сохраняем конфигурацию по умолчанию
+        saveDefaultConfig();
         trapDataMap = new HashMap<>();
         loadTrapData();
         getServer().getPluginManager().registerEvents(this, this);
@@ -76,11 +84,9 @@ public class CatFTtrapSkins extends JavaPlugin implements Listener {
 
         if (event.getAction().toString().contains("RIGHT_CLICK") && item != null && item.getType() != Material.AIR) {
             String trapName = getTrapName(item);
-
             if (trapName != null) {
                 TrapData trapData = trapDataMap.get(trapName);
                 if (trapData != null) {
-                    // Проверяем задержки
                     if (item.getType() == Material.ENDER_PEARL) {
                         if (trapData.getPerlDelay() > 0) {
                             event.setCancelled(true);
@@ -103,17 +109,46 @@ public class CatFTtrapSkins extends JavaPlugin implements Listener {
                         }
                     }
 
-                    // Логика активации ловушки
                     File schematicFile = new File(getDataFolder(), trapData.getSchematic());
                     if (schematicFile.exists()) {
                         try {
-                            EditSession editSession = worldEdit.getEditSessionFactory().getEditSession(new BukkitWorld(player.getWorld()), -1);
-                            SchematicFormat schematicFormat = SchematicFormat.getByFile(schematicFile);
-                            schematicFormat.load(schematicFile).paste(editSession, new Vector(player.getLocation().getBlockX(), player.getLocation().getBlockY(), player.getLocation().getBlockZ()), true);
-                            player.sendMessage("Вы активировали ловушку: " + trapData.getName() + "!");
-                            applyEffectsToNearbyPlayers(player, trapData);
+                            ClipboardFormat format = ClipboardFormats.findByFile(schematicFile);
+                            if (format != null) {
+                                try (ClipboardReader reader = format.getReader(new FileInputStream(schematicFile))) {
+                                    Clipboard clipboard = reader.read();
+                                    
+                                    try (EditSession editSession = WorldEdit.getInstance().newEditSession(new BukkitWorld(player.getWorld()))) {
+                                        Operation operation = new ClipboardHolder(clipboard)
+                                                .createPaste(editSession)
+                                                .to(BlockVector3.at(player.getLocation().getBlockX(), player.getLocation().getBlockY(), player.getLocation().getBlockZ()))
+                                                .ignoreAirBlocks(true)
+                                                .build();
+                                        
+                                        Operations.complete(operation);
+                                        player.sendMessage("Вы активировали ловушку: " + trapData.getName() + "!");
+                                        
+                                        try {
+                                            if (trapData.getSound() != null && !trapData.getSound().isEmpty()) {
+                                                Sound sound = Sound.valueOf(trapData.getSound().toUpperCase());
+                                                player.getWorld().playSound(player.getLocation(), sound, 1.0f, 1.0f);
+                                            }
+                                        } catch (IllegalArgumentException e) {
+                                            getLogger().warning("Неверный звук указан для ловушки " + trapData.getName() + ": " + trapData.getSound());
+                                        }
+                                        
+                                        applyEffectsToNearbyPlayers(player, trapData);
+                                    }
+                                }
+                            } else {
+                                player.sendMessage("Не удалось загрузить схему: " + trapData.getSchematic());
+                            }
+                        } catch (IOException e) {
+                            player.sendMessage("Ошибка при чтении схемы: " + e.getMessage());
+                            getLogger().severe("Ошибка при чтении схемы: " + e.getMessage());
                         } catch (Exception e) {
-                            player.sendMessage("Ошибка активации ловушки: " + e.getMessage());
+                            player.sendMessage("Произошла ошибка при активации ловушки: " + e.getMessage());
+                            getLogger().severe("Ошибка при активации ловушки: " + e.getMessage());
+                            e.printStackTrace();
                         }
                     } else {
                         player.sendMessage("Схема не найдена для ловушки: " + trapData.getName());
@@ -123,7 +158,6 @@ public class CatFTtrapSkins extends JavaPlugin implements Listener {
         }
     }
 
-    // Метод для получения имени ловушки на основе предмета
     private String getTrapName(ItemStack item) {
         for (Map.Entry<String, TrapData> entry : trapDataMap.entrySet()) {
             if (entry.getValue().getItem().equalsIgnoreCase(item.getType().toString())) {
@@ -134,9 +168,8 @@ public class CatFTtrapSkins extends JavaPlugin implements Listener {
     }
 
     private void applyEffectsToNearbyPlayers(Player player, TrapData trapData) {
-        // Здесь можно реализовать логику применения эффектов к ближайшим игрокам
         for (Player nearbyPlayer : Bukkit.getOnlinePlayers()) {
-            if (nearbyPlayer.getLocation().distance(player.getLocation()) <= 5) { // Например, радиус 5 блоков
+            if (nearbyPlayer.getLocation().distance(player.getLocation()) <= 5) { // Радиус 5 блоков
                 for (Map.Entry<PotionEffectType, Integer> effect : trapData.getEffects().entrySet()) {
                     nearbyPlayer.addPotionEffect(effect.getKey().createEffect(trapData.getEffectDuration() * 20, effect.getValue()));
                 }
@@ -151,8 +184,8 @@ public class CatFTtrapSkins extends JavaPlugin implements Listener {
         private final Map<PotionEffectType, Integer> effects;
         private final int effectDuration;
         private final String sound;
-        private final int horusDelay;  // Задержка для Хоруса
-        private final int perlDelay;    // Задержка для Перла
+        private final int horusDelay;
+        private final int perlDelay; 
 
         public TrapData(String name, String item, String schematic, Map<PotionEffectType, Integer> effects,
                         int effectDuration, String sound, int horusDelay, int perlDelay) {

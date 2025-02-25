@@ -1,0 +1,32 @@
+skins:
+  trap1:
+    name: "Обсидиановая Трапка"
+    item: "netherite_scrap" # Предмет, который игрок будет использовать для активации ловушки
+    schematic: "trap1.schem" # Имя файла схемы без пути и расширения
+    effect_duration: 5 # Продолжительность эффектов в секундах
+    sound: "ENTITY_BLAZE_SHOOT" # Звук, который будет воспроизводиться при активации (по желанию)
+    horus_delay: 10 # Задержка для использования Хоруса в секундах
+    perl_delay: 5 # Задержка для использования Перла в секундах
+    effects:
+      poison:
+        effect: "POISON" # Тип эффекта
+        level: 1 # Уровень эффекта (1 - 2 - 3 и т.д.)
+      blindness:
+        effect: "BLINDNESS"
+        level: 0
+
+  trap2:
+    name: "Огненная Трапка"
+    item: "fire_charge" # Измените на нужный предмет
+    schematic: "trap2.schem" # Имя файла схемы
+    effect_duration: 3
+    sound: "ENTITY_GENERIC_BURN" # Звук
+    horus_delay: 5 # Задержка
+    perl_delay: 2 # Задержка
+    effects:
+      slow:
+        effect: "SLOW"
+        level: 2
+      confusion:
+        effect: "CONFUSION"
+        level: 1
