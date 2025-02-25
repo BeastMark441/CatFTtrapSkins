@@ -1,0 +1,4 @@
+name: CatFTtrapSkins
+version: '${project.version}'
+main: me.inotwhitecat.catfttrapskins.CatFTtrapSkins
+api-version: '1.16'
